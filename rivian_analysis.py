@@ -1,52 +1,58 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime, date, timedelta
-from polygon import RESTClient
+from datetime import datetime
+import requests  # Needed for custom session
 
-# Polygon client (API key is auto-configured in many environments; if not, add yours)
-client = RESTClient()  # If needed: RESTClient(api_key="YOUR_KEY_HERE")
+# === PROVEN YFINANCE FIX FOR STREAMLIT CLOUD (2025) ===
+# Create a custom requests session with browser-like headers
+session = requests.Session()
+session.headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
+
+# Force yfinance to use this session
+yf.shared._session = session
+
+# Clear any old caches/errors
+yf.shared._DFS = {}
+yf.shared._ERRORS = {}
+
+# ================================================
 
 st.title("🚗 Rivian (RIVN) Stock Technical Analysis")
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=3600)  # Refresh max once per hour
 def fetch_data():
     ticker = "RIVN"
     try:
-        # Historical data (1 year daily bars)
-        today = date.today()
-        one_year_ago = today - timedelta(days=365)
-        hist = client.get_aggs(ticker, 1, "day", one_year_ago, today)
-        if not hist:
-            raise Exception("No historical data returned")
+        hist = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
+        if hist.empty:
+            raise ValueError("No data returned")
         
-        # Convert to DataFrame
-        df = pd.DataFrame(hist)
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('timestamp', inplace=True)
-        df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'})
-        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        stock = yf.Ticker(ticker)
+        info = stock.info
         
-        # Snapshot for current metrics
-        snapshot = client.get_snapshot_all('stocks', [ticker])[0]
-        details = client.get_ticker_details(ticker)
+        current_price = info.get("currentPrice") or info.get("regularMarketPrice") or hist['Close'].iloc[-1]
+        previous_close = info.get("regularMarketPreviousClose")
+        volume = info.get("volume")
+        market_cap = info.get("marketCap")
         
-        current_price = snapshot.last_trade.price if snapshot.last_trade else snapshot.min.close
-        previous_close = snapshot.prev_day.close
-        volume = snapshot.day.volume
-        market_cap = details.market_cap
-        
-        return df, current_price, previous_close, volume, market_cap
+        return hist, current_price, previous_close, volume, market_cap
     
     except Exception as e:
-        st.error(f"Failed to fetch data: {str(e)}")
-        st.info("Try again in a few minutes or check API limits.")
+        st.error(f"Data fetch failed: {str(e)}")
+        st.info("Temporary Yahoo issue – refresh in a minute.")
         return pd.DataFrame(), None, None, None, None
 
 hist, current_price, previous_close, volume, market_cap = fetch_data()
 
-# Current Metrics
 st.subheader("📊 Current Metrics")
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Current Price", f"${current_price:.2f}" if current_price else "N/A")
@@ -55,7 +61,6 @@ col3.metric("Volume", f"{volume:,}" if volume else "N/A")
 col4.metric("Market Cap", f"${market_cap / 1e9:.2f}B" if market_cap else "N/A")
 
 if hist.empty:
-    st.warning("No data available right now.")
     st.stop()
 
 # Indicators
@@ -80,65 +85,58 @@ rolling_std = hist['Close'].rolling(20).std()
 hist['BB_Upper'] = rolling_mean + (rolling_std * 2)
 hist['BB_Lower'] = rolling_mean - (rolling_std * 2)
 
-hist = hist.dropna()  # Clean up NaNs
+# Clean NaNs for plotting
+hist_plot = hist.dropna()
 
-# Recent Data
-st.subheader("📅 Recent Price Data")
-st.dataframe(hist[["Open", "High", "Low", "Close", "Volume"]].tail(10).round(2))
+st.subheader("📅 Recent Data")
+st.dataframe(hist.tail(10)[["Open", "High", "Low", "Close", "Volume"]].round(2))
 
-# Price Chart
 st.subheader("📈 Price Chart")
 fig, ax = plt.subplots(figsize=(12, 6))
-ax.plot(hist.index, hist['Close'], label='Close', color='blue')
-ax.plot(hist.index, hist['SMA_50'], label='50-day SMA', color='orange')
-ax.plot(hist.index, hist['SMA_200'], label='200-day SMA', color='red')
-ax.plot(hist.index, hist['BB_Upper'], label='Upper BB', color='green', linestyle='--')
-ax.plot(hist.index, hist['BB_Lower'], label='Lower BB', color='green', linestyle='--')
-ax.fill_between(hist.index, hist['BB_Lower'], hist['BB_Upper'], color='green', alpha=0.1)
-ax.set_title("RIVN Price with Indicators")
+ax.plot(hist_plot.index, hist_plot['Close'], label='Close', color='blue', linewidth=2)
+ax.plot(hist_plot.index, hist_plot['SMA_50'], label='50-day SMA', color='orange')
+ax.plot(hist_plot.index, hist_plot['SMA_200'], label='200-day SMA', color='red')
+ax.plot(hist_plot.index, hist_plot['BB_Upper'], label='Upper BB', color='green', linestyle='--')
+ax.plot(hist_plot.index, hist_plot['BB_Lower'], label='Lower BB', color='green', linestyle='--')
+ax.fill_between(hist_plot.index, hist_plot['BB_Lower'], hist_plot['BB_Upper'], alpha=0.1, color='green')
 ax.legend()
 ax.grid(alpha=0.3)
 st.pyplot(fig)
 
-# RSI
 st.subheader("🔄 RSI (14)")
 fig_rsi, ax_rsi = plt.subplots(figsize=(12, 3))
-ax_rsi.plot(hist.index, hist['RSI_14'], color='purple')
+ax_rsi.plot(hist_plot.index, hist_plot['RSI_14'], color='purple', linewidth=2)
 ax_rsi.axhline(70, color='red', linestyle='--')
 ax_rsi.axhline(30, color='green', linestyle='--')
 ax_rsi.set_ylim(0, 100)
-ax_rsi.set_title("RSI")
 ax_rsi.grid(alpha=0.3)
 st.pyplot(fig_rsi)
 
-# MACD
 st.subheader("📉 MACD")
 fig_macd, ax_macd = plt.subplots(figsize=(12, 3))
-ax_macd.plot(hist.index, hist['MACD'], label='MACD', color='blue')
-ax_macd.plot(hist.index, hist['MACD_Signal'], label='Signal', color='orange')
-ax_macd.bar(hist.index, hist['MACD'] - hist['MACD_Signal'], color='gray', alpha=0.6)
-ax_macd.axhline(0, color='black')
-ax_macd.set_title("MACD")
+ax_macd.plot(hist_plot.index, hist_plot['MACD'], label='MACD', color='blue')
+ax_macd.plot(hist_plot.index, hist_plot['MACD_Signal'], label='Signal', color='orange')
+ax_macd.bar(hist_plot.index, hist_plot['MACD'] - hist_plot['MACD_Signal'], color='gray', alpha=0.6)
+ax_macd.axhline(0, color='black', linewidth=0.8)
 ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
 
-# Insights
 st.subheader("💡 Quick Insights")
-latest = hist.iloc[-1]
+latest = hist_plot.iloc[-1]
 insights = []
 if latest['Close'] > latest['SMA_50'] > latest['SMA_200']:
-    insights.append("🟢 Strong bullish trend")
+    insights.append("🟢 Strong Bullish Trend")
 if latest['RSI_14'] > 70:
-    insights.append("🔴 Overbought – possible pullback")
+    insights.append("🔴 Overbought")
 elif latest['RSI_14'] < 30:
-    insights.append("🟢 Oversold – possible rebound")
+    insights.append("🟢 Oversold")
 if latest['MACD'] > latest['MACD_Signal']:
-    insights.append("🟢 Bullish momentum")
+    insights.append("🟢 Bullish Momentum")
 else:
-    insights.append("🔴 Bearish momentum")
+    insights.append("🔴 Bearish Momentum")
 
-for i in insights:
-    st.write(i)
+for insight in insights:
+    st.write(insight)
 
-st.caption(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Source: Polygon API | Not investment advice")
+st.caption(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Data: Yahoo Finance via yfinance | Not financial advice")
