@@ -5,20 +5,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-# === FIX FOR YAHOO FINANCE RATE LIMIT ON STREAMLIT CLOUD ===
-# Set a realistic browser User-Agent to avoid blocking
+# === FIX FOR YAHOO FINANCE BLOCKING ON STREAMLIT CLOUD ===
+# Set a real browser User-Agent to avoid rate limiting / blocking
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 
-# Apply headers globally to all yfinance requests
-yf.pdr_override()  # Helps with some internal calls
-session = yf.shared._session
-if session is None:
-    yf.shared._session = session = yf.utils.get_yf_session()
+# Apply headers to yfinance session
+session = yf.shared._session or yf.utils.get_yf_session()
 session.headers.update(headers)
 
-# Clear any old cached errors
+# Clear any cached errors from previous failed attempts
 yf.shared._DFS = {}
 yf.shared._ERRORS = {}
 
@@ -26,18 +23,18 @@ yf.shared._ERRORS = {}
 
 st.title("🚗 Rivian (RIVN) Stock Technical Analysis")
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour to reduce Yahoo requests
+@st.cache_data(ttl=3600)  # Cache data for 1 hour
 def fetch_data():
     ticker = "RIVN"
     try:
-        # Download historical price data
+        # Download 1 year of daily data
         hist = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
         
-        # Get current info
+        # Get current market info
         stock = yf.Ticker(ticker)
         info = stock.info
         
-        current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+        current_price = info.get("currentPrice") or info.get("regularMarketPrice") or hist['Close'].iloc[-1] if not hist.empty else None
         previous_close = info.get("regularMarketPreviousClose")
         volume = info.get("volume")
         market_cap = info.get("marketCap")
@@ -45,7 +42,7 @@ def fetch_data():
         return hist, current_price, previous_close, volume, market_cap
     
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"Could not fetch data: {str(e)}")
         return pd.DataFrame(), None, None, None, None
 
 hist, current_price, previous_close, volume, market_cap = fetch_data()
@@ -59,10 +56,10 @@ col3.metric("Volume", f"{volume:,}" if volume else "N/A")
 col4.metric("Market Cap", f"${market_cap / 1e9:.2f}B" if market_cap else "N/A")
 
 if hist.empty:
-    st.warning("No data available. Please try again later.")
+    st.warning("No stock data available right now. Please try again in a few minutes.")
     st.stop()
 
-# Calculate Indicators
+# Calculate Technical Indicators
 delta = hist['Close'].diff()
 up = delta.clip(lower=0)
 down = -delta.clip(upper=0)
@@ -76,15 +73,15 @@ exp26 = hist['Close'].ewm(span=26, adjust=False).mean()
 hist['MACD'] = exp12 - exp26
 hist['MACD_Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
 
-hist['SMA_50'] = hist['Close'].rolling(50).mean()
-hist['SMA_200'] = hist['Close'].rolling(200).mean()
+hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+hist['SMA_200'] = hist['Close'].rolling(window=200).mean()
 
-rolling_mean = hist['Close'].rolling(20).mean()
-rolling_std = hist['Close'].rolling(20).std()
+rolling_mean = hist['Close'].rolling(window=20).mean()
+rolling_std = hist['Close'].rolling(window=20).std()
 hist['BB_Upper'] = rolling_mean + (rolling_std * 2)
 hist['BB_Lower'] = rolling_mean - (rolling_std * 2)
 
-# Recent Data Table
+# Recent Data
 st.subheader("📅 Recent Price Data")
 st.dataframe(hist[["Open", "High", "Low", "Close", "Volume"]].tail(10).round(2))
 
@@ -94,33 +91,33 @@ fig, ax = plt.subplots(figsize=(12, 6))
 ax.plot(hist.index, hist['Close'], label='Close Price', color='blue', linewidth=2)
 ax.plot(hist.index, hist['SMA_50'], label='50-day SMA', color='orange')
 ax.plot(hist.index, hist['SMA_200'], label='200-day SMA', color='red')
-ax.plot(hist.index, hist['BB_Upper'], label='Upper Bollinger', color='green', linestyle='--', alpha=0.7)
-ax.plot(hist.index, hist['BB_Lower'], label='Lower Bollinger', color='green', linestyle='--', alpha=0.7)
-ax.fill_between(hist.index, hist['BB_Upper'], hist['BB_Lower'], alpha=0.1, color='green')
+ax.plot(hist.index, hist['BB_Upper'], label='Upper Bollinger', color='green', linestyle='--', alpha=0.8)
+ax.plot(hist.index, hist['BB_Lower'], label='Lower Bollinger', color='green', linestyle='--', alpha=0.8)
+ax.fill_between(hist.index, hist['BB_Lower'], hist['BB_Upper'], color='green', alpha=0.1)
 ax.set_title("RIVN Price with Moving Averages & Bollinger Bands")
 ax.set_ylabel("Price ($)")
 ax.legend()
 ax.grid(True, alpha=0.3)
 st.pyplot(fig)
 
-# RSI Chart
+# RSI
 st.subheader("🔄 RSI (14-day)")
 fig_rsi, ax_rsi = plt.subplots(figsize=(12, 3))
 ax_rsi.plot(hist.index, hist['RSI_14'], color='purple', linewidth=2)
-ax_rsi.axhline(70, color='red', linestyle='--', alpha=0.7, label='Overbought')
-ax_rsi.axhline(30, color='green', linestyle='--', alpha=0.7, label='Oversold')
+ax_rsi.axhline(70, color='red', linestyle='--', label='Overbought')
+ax_rsi.axhline(30, color='green', linestyle='--', label='Oversold')
 ax_rsi.set_ylim(0, 100)
-ax_rsi.set_title("Relative Strength Index")
+ax_rsi.set_title("Relative Strength Index (RSI)")
 ax_rsi.legend()
 ax_rsi.grid(True, alpha=0.3)
 st.pyplot(fig_rsi)
 
-# MACD Chart
+# MACD
 st.subheader("📉 MACD")
 fig_macd, ax_macd = plt.subplots(figsize=(12, 3))
-ax_macd.plot(hist.index, hist['MACD'], label='MACD', color='blue')
+ax_macd.plot(hist.index, hist['MACD'], label='MACD Line', color='blue')
 ax_macd.plot(hist.index, hist['MACD_Signal'], label='Signal Line', color='orange')
-ax_macd.bar(hist.index, hist['MACD'] - hist['MACD_Signal'], label='Histogram', color='gray', alpha=0.5)
+ax_macd.bar(hist.index, hist['MACD'] - hist['MACD_Signal'], label='Histogram', color='gray', alpha=0.6)
 ax_macd.axhline(0, color='black', linewidth=0.8)
 ax_macd.set_title("MACD Indicator")
 ax_macd.legend()
@@ -128,29 +125,29 @@ ax_macd.grid(True, alpha=0.3)
 st.pyplot(fig_macd)
 
 # Quick Insights
-st.subheader("💡 Quick Technical Insights")
+st.subheader("💡 Quick Technical Outlook")
 latest = hist.iloc[-1]
 insights = []
 
 if latest['Close'] > latest['SMA_50'] > latest['SMA_200']:
-    insights.append("🟢 **Strong Bullish Trend**: Price above both 50-day and 200-day SMA")
+    insights.append("🟢 **Strong Bullish Trend**")
 elif latest['Close'] > latest['SMA_50']:
-    insights.append("🟡 **Moderate Bullish**: Price above 50-day SMA")
+    insights.append("🟡 **Moderate Bullish**")
 
 if latest['RSI_14'] > 70:
-    insights.append("🔴 **Overbought**: RSI > 70 – possible pullback ahead")
+    insights.append("🔴 **Overbought** – Risk of pullback")
 elif latest['RSI_14'] < 30:
-    insights.append("🟢 **Oversold**: RSI < 30 – potential bounce")
+    insights.append("🟢 **Oversold** – Possible rebound")
 
 if latest['MACD'] > latest['MACD_Signal']:
-    insights.append("🟢 **Bullish MACD**: MACD above signal line")
+    insights.append("🟢 **Bullish Momentum**")
 else:
-    insights.append("🔴 **Bearish MACD**: MACD below signal line")
-
-if not insights:
-    insights.append("⚪ **Neutral**: No strong signals at the moment")
+    insights.append("🔴 **Bearish Momentum**")
 
 for insight in insights:
     st.write(insight)
 
-st.caption(f"Data updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Not financial advice 🚀")
+if not insights:
+    st.write("⚪ Neutral market signals")
+
+st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data from Yahoo Finance | Not financial advice")
