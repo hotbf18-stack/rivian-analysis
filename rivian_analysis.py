@@ -125,18 +125,29 @@ st.pyplot(fig_macd)
 st.subheader("💡 Quick Insights")
 latest = hist_plot.iloc[-1]
 insights = []
-if latest['Close'] > latest['SMA_50'] > latest['SMA_200']:
-    insights.append("🟢 Strong Bullish Trend")
-if latest['RSI_14'] > 70:
-    insights.append("🔴 Overbought")
-elif latest['RSI_14'] < 30:
-    insights.append("🟢 Oversold")
-if latest['MACD'] > latest['MACD_Signal']:
-    insights.append("🟢 Bullish Momentum")
-else:
-    insights.append("🔴 Bearish Momentum")
+
+# Safe comparisons with checks for NaN
+if pd.notna(latest['SMA_50']) and pd.notna(latest['SMA_200']):
+    if latest['Close'] > latest['SMA_50'] > latest['SMA_200']:
+        insights.append("🟢 Strong Bullish Trend")
+
+if pd.notna(latest['RSI_14']):
+    if latest['RSI_14'] > 70:
+        insights.append("🔴 Overbought – possible pullback")
+    elif latest['RSI_14'] < 30:
+        insights.append("🟢 Oversold – possible rebound")
+
+if pd.notna(latest['MACD']) and pd.notna(latest['MACD_Signal']):
+    if latest['MACD'] > latest['MACD_Signal']:
+        insights.append("🟢 Bullish Momentum")
+    else:
+        insights.append("🔴 Bearish Momentum")
+
+if not insights:
+    insights.append("⚪ Neutral / Consolidating")
 
 for insight in insights:
     st.write(insight)
 
 st.caption(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Data: Yahoo Finance via yfinance | Not financial advice")
+
