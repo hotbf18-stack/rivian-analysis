@@ -79,7 +79,7 @@ rolling_std = hist['Close'].rolling(20).std()
 hist['BB_Upper'] = rolling_mean + (rolling_std * 2)
 hist['BB_Lower'] = rolling_mean - (rolling_std * 2)
 
-# Drop NaNs for clean plotting and insights
+# Clean NaNs for plotting and insights
 hist_plot = hist.dropna()
 
 st.subheader("📅 Recent Data")
@@ -116,33 +116,33 @@ ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
 
-# === ULTIMATE BULLETPROOF QUICK INSIGHTS ===
+# === FINAL BULLETPROOF QUICK INSIGHTS (USING .item() TO AVOID PANDAS TRUTH AMBIGUITY) ===
 st.subheader("💡 Quick Insights")
 latest = hist_plot.iloc[-1]
 insights = []
 
-# Extract values safely with .get() to avoid any key issues
-close = latest.get('Close')
-sma_50 = latest.get('SMA_50')
-sma_200 = latest.get('SMA_200')
-rsi = latest.get('RSI_14')
-macd = latest.get('MACD')
-signal = latest.get('MACD_Signal')
+# Extract scalar values safely
+close = latest['Close'].item() if pd.notna(latest['Close']) else None
+sma_50 = latest['SMA_50'].item() if pd.notna(latest['SMA_50']) else None
+sma_200 = latest['SMA_200'].item() if pd.notna(latest['SMA_200']) else None
+rsi = latest['RSI_14'].item() if pd.notna(latest['RSI_14']) else None
+macd = latest['MACD'].item() if pd.notna(latest['MACD']) else None
+signal = latest['MACD_Signal'].item() if pd.notna(latest['MACD_Signal']) else None
 
 # Strong Bullish Trend
-if all(pd.notna(v) for v in [close, sma_50, sma_200]):
-    if close > sma_50 and sma_50 > sma_200:
+if close is not None and sma_50 is not None and sma_200 is not None:
+    if close > sma_50 > sma_200:
         insights.append("🟢 Strong Bullish Trend")
 
 # RSI
-if pd.notna(rsi):
+if rsi is not None:
     if rsi > 70:
         insights.append("🔴 Overbought – possible pullback")
     elif rsi < 30:
         insights.append("🟢 Oversold – possible rebound")
 
 # MACD
-if pd.notna(macd) and pd.notna(signal):
+if macd is not None and signal is not None:
     if macd > signal:
         insights.append("🟢 Bullish Momentum")
     else:
