@@ -116,38 +116,38 @@ ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
 
-# === BULLETPROOF QUICK INSIGHTS — NO CHAINED COMPARISONS, NO ERRORS ===
+# === ULTIMATE BULLETPROOF QUICK INSIGHTS ===
 st.subheader("💡 Quick Insights")
 latest = hist_plot.iloc[-1]
 insights = []
 
-# Strong Bullish Trend: Price above 50-day AND 50-day above 200-day
-sma_50 = latest['SMA_50']
-sma_200 = latest['SMA_200']
-close = latest['Close']
+# Extract values safely with .get() to avoid any key issues
+close = latest.get('Close')
+sma_50 = latest.get('SMA_50')
+sma_200 = latest.get('SMA_200')
+rsi = latest.get('RSI_14')
+macd = latest.get('MACD')
+signal = latest.get('MACD_Signal')
 
-if pd.notna(sma_50) and pd.notna(sma_200) and pd.notna(close):
+# Strong Bullish Trend
+if all(pd.notna(v) for v in [close, sma_50, sma_200]):
     if close > sma_50 and sma_50 > sma_200:
         insights.append("🟢 Strong Bullish Trend")
 
-# RSI signals
-rsi = latest['RSI_14']
+# RSI
 if pd.notna(rsi):
     if rsi > 70:
         insights.append("🔴 Overbought – possible pullback")
     elif rsi < 30:
         insights.append("🟢 Oversold – possible rebound")
 
-# MACD signal
-macd = latest['MACD']
-signal = latest['MACD_Signal']
+# MACD
 if pd.notna(macd) and pd.notna(signal):
     if macd > signal:
         insights.append("🟢 Bullish Momentum")
     else:
         insights.append("🔴 Bearish Momentum")
 
-# Fallback
 if not insights:
     insights.append("⚪ Neutral / Consolidating")
 
