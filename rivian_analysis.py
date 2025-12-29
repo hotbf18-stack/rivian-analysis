@@ -1,26 +1,12 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
-import requests
+from datetime import datetime, date, timedelta
+from polygon import RESTClient
 
-# === ROBUST FIX FOR YAHOO FINANCE ON STREAMLIT CLOUD ===
-# Create a custom session with proper headers
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-})
-
-# Force yfinance to use our session
-yf.shared._session = session
-
-# Clear any old cached data/errors
-yf.shared._DFS = {}
-yf.shared._ERRORS = {}
-
-# ================================================
+# Polygon client (API key is auto-configured in many environments; if not, add yours)
+client = RESTClient()  # If needed: RESTClient(api_key="YOUR_KEY_HERE")
 
 st.title("🚗 Rivian (RIVN) Stock Technical Analysis")
 
@@ -28,26 +14,34 @@ st.title("🚗 Rivian (RIVN) Stock Technical Analysis")
 def fetch_data():
     ticker = "RIVN"
     try:
-        # Download historical data using our custom session
-        hist = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
-        
-        if hist.empty:
+        # Historical data (1 year daily bars)
+        today = date.today()
+        one_year_ago = today - timedelta(days=365)
+        hist = client.get_aggs(ticker, 1, "day", one_year_ago, today)
+        if not hist:
             raise Exception("No historical data returned")
         
-        # Get current info
-        stock = yf.Ticker(ticker)
-        info = stock.info
+        # Convert to DataFrame
+        df = pd.DataFrame(hist)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'})
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
         
-        current_price = info.get("currentPrice") or info.get("regularMarketPrice") or hist['Close'].iloc[-1]
-        previous_close = info.get("regularMarketPreviousClose")
-        volume = info.get("volume")
-        market_cap = info.get("marketCap")
+        # Snapshot for current metrics
+        snapshot = client.get_snapshot_all('stocks', [ticker])[0]
+        details = client.get_ticker_details(ticker)
         
-        return hist, current_price, previous_close, volume, market_cap
+        current_price = snapshot.last_trade.price if snapshot.last_trade else snapshot.min.close
+        previous_close = snapshot.prev_day.close
+        volume = snapshot.day.volume
+        market_cap = details.market_cap
+        
+        return df, current_price, previous_close, volume, market_cap
     
     except Exception as e:
         st.error(f"Failed to fetch data: {str(e)}")
-        st.info("This can happen temporarily due to Yahoo Finance restrictions. Try again in a few minutes.")
+        st.info("Try again in a few minutes or check API limits.")
         return pd.DataFrame(), None, None, None, None
 
 hist, current_price, previous_close, volume, market_cap = fetch_data()
@@ -61,9 +55,10 @@ col3.metric("Volume", f"{volume:,}" if volume else "N/A")
 col4.metric("Market Cap", f"${market_cap / 1e9:.2f}B" if market_cap else "N/A")
 
 if hist.empty:
+    st.warning("No data available right now.")
     st.stop()
 
-# Calculate Indicators
+# Indicators
 delta = hist['Close'].diff()
 up = delta.clip(lower=0)
 down = -delta.clip(upper=0)
@@ -85,20 +80,22 @@ rolling_std = hist['Close'].rolling(20).std()
 hist['BB_Upper'] = rolling_mean + (rolling_std * 2)
 hist['BB_Lower'] = rolling_mean - (rolling_std * 2)
 
-# Recent Data Table
+hist = hist.dropna()  # Clean up NaNs
+
+# Recent Data
 st.subheader("📅 Recent Price Data")
 st.dataframe(hist[["Open", "High", "Low", "Close", "Volume"]].tail(10).round(2))
 
 # Price Chart
 st.subheader("📈 Price Chart")
 fig, ax = plt.subplots(figsize=(12, 6))
-ax.plot(hist.index, hist['Close'], label='Close Price', color='blue', linewidth=2)
+ax.plot(hist.index, hist['Close'], label='Close', color='blue')
 ax.plot(hist.index, hist['SMA_50'], label='50-day SMA', color='orange')
 ax.plot(hist.index, hist['SMA_200'], label='200-day SMA', color='red')
-ax.plot(hist.index, hist['BB_Upper'], label='Upper Band', color='green', linestyle='--')
-ax.plot(hist.index, hist['BB_Lower'], label='Lower Band', color='green', linestyle='--')
+ax.plot(hist.index, hist['BB_Upper'], label='Upper BB', color='green', linestyle='--')
+ax.plot(hist.index, hist['BB_Lower'], label='Lower BB', color='green', linestyle='--')
 ax.fill_between(hist.index, hist['BB_Lower'], hist['BB_Upper'], color='green', alpha=0.1)
-ax.set_title("RIVN - Price with SMAs & Bollinger Bands")
+ax.set_title("RIVN Price with Indicators")
 ax.legend()
 ax.grid(alpha=0.3)
 st.pyplot(fig)
@@ -106,11 +103,11 @@ st.pyplot(fig)
 # RSI
 st.subheader("🔄 RSI (14)")
 fig_rsi, ax_rsi = plt.subplots(figsize=(12, 3))
-ax_rsi.plot(hist.index, hist['RSI_14'], color='purple', linewidth=2)
+ax_rsi.plot(hist.index, hist['RSI_14'], color='purple')
 ax_rsi.axhline(70, color='red', linestyle='--')
 ax_rsi.axhline(30, color='green', linestyle='--')
 ax_rsi.set_ylim(0, 100)
-ax_rsi.set_title("Relative Strength Index")
+ax_rsi.set_title("RSI")
 ax_rsi.grid(alpha=0.3)
 st.pyplot(fig_rsi)
 
@@ -120,8 +117,8 @@ fig_macd, ax_macd = plt.subplots(figsize=(12, 3))
 ax_macd.plot(hist.index, hist['MACD'], label='MACD', color='blue')
 ax_macd.plot(hist.index, hist['MACD_Signal'], label='Signal', color='orange')
 ax_macd.bar(hist.index, hist['MACD'] - hist['MACD_Signal'], color='gray', alpha=0.6)
-ax_macd.axhline(0, color='black', linewidth=0.8)
-ax_macd.set_title("MACD Indicator")
+ax_macd.axhline(0, color='black')
+ax_macd.set_title("MACD")
 ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
@@ -144,4 +141,4 @@ else:
 for i in insights:
     st.write(i)
 
-st.caption(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Source: Yahoo Finance | Not investment advice")
+st.caption(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Source: Polygon API | Not investment advice")
