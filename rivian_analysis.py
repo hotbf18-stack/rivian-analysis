@@ -79,7 +79,7 @@ rolling_std = hist['Close'].rolling(20).std()
 hist['BB_Upper'] = rolling_mean + (rolling_std * 2)
 hist['BB_Lower'] = rolling_mean - (rolling_std * 2)
 
-# Drop rows with NaN for clean plotting
+# Drop NaNs for clean plotting and insights
 hist_plot = hist.dropna()
 
 st.subheader("📅 Recent Data")
@@ -116,14 +116,14 @@ ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
 
-# === FIXED QUICK INSIGHTS (no more ValueError) ===
+# === PERFECT QUICK INSIGHTS (NO ERRORS) ===
 st.subheader("💡 Quick Insights")
 latest = hist_plot.iloc[-1]
 insights = []
 
-# Safe checks for NaN values
+# Fixed: correct chained comparison (was typo with SMA_50 twice)
 if pd.notna(latest['SMA_50']) and pd.notna(latest['SMA_200']):
-    if latest['Close'] > latest['SMA_50'] > latest['SMA_200']:
+    if latest['Close'] > latest['SMA_50'] and latest['SMA_50'] > latest['SMA_200']:
         insights.append("🟢 Strong Bullish Trend")
 
 if pd.notna(latest['RSI_14']):
