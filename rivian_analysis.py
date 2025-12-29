@@ -148,6 +148,3 @@ if not insights:
 
 for insight in insights:
     st.write(insight)
-
-st.caption(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Data: Yahoo Finance via yfinance | Not financial advice")
-
