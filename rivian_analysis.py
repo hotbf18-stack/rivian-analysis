@@ -4,31 +4,25 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
-import requests  # Needed for custom session
+import requests
 
-# === PROVEN YFINANCE FIX FOR STREAMLIT CLOUD (2025) ===
-# Create a custom requests session with browser-like headers
+# === YFINANCE FIX FOR STREAMLIT CLOUD ===
 session = requests.Session()
 session.headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
 }
-
-# Force yfinance to use this session
 yf.shared._session = session
-
-# Clear any old caches/errors
 yf.shared._DFS = {}
 yf.shared._ERRORS = {}
-
 # ================================================
 
 st.title("🚗 Rivian (RIVN) Stock Technical Analysis")
 
-@st.cache_data(ttl=3600)  # Refresh max once per hour
+@st.cache_data(ttl=3600)
 def fetch_data():
     ticker = "RIVN"
     try:
@@ -48,7 +42,7 @@ def fetch_data():
     
     except Exception as e:
         st.error(f"Data fetch failed: {str(e)}")
-        st.info("Temporary Yahoo issue – refresh in a minute.")
+        st.info("Temporary issue – refresh in a minute.")
         return pd.DataFrame(), None, None, None, None
 
 hist, current_price, previous_close, volume, market_cap = fetch_data()
@@ -85,7 +79,7 @@ rolling_std = hist['Close'].rolling(20).std()
 hist['BB_Upper'] = rolling_mean + (rolling_std * 2)
 hist['BB_Lower'] = rolling_mean - (rolling_std * 2)
 
-# Clean NaNs for plotting
+# Drop rows with NaN for clean plotting
 hist_plot = hist.dropna()
 
 st.subheader("📅 Recent Data")
@@ -122,11 +116,12 @@ ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
 
+# === FIXED QUICK INSIGHTS (no more ValueError) ===
 st.subheader("💡 Quick Insights")
 latest = hist_plot.iloc[-1]
 insights = []
 
-# Safe comparisons with checks for NaN
+# Safe checks for NaN values
 if pd.notna(latest['SMA_50']) and pd.notna(latest['SMA_200']):
     if latest['Close'] > latest['SMA_50'] > latest['SMA_200']:
         insights.append("🟢 Strong Bullish Trend")
@@ -148,3 +143,6 @@ if not insights:
 
 for insight in insights:
     st.write(insight)
+# ================================================
+
+st.caption(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Data: Yahoo Finance via yfinance | Not financial advice")
