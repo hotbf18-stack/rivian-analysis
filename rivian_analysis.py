@@ -79,7 +79,7 @@ rolling_std = hist['Close'].rolling(20).std()
 hist['BB_Upper'] = rolling_mean + (rolling_std * 2)
 hist['BB_Lower'] = rolling_mean - (rolling_std * 2)
 
-# Clean NaNs for plotting and insights
+# Drop NaNs for clean plotting and insights
 hist_plot = hist.dropna()
 
 st.subheader("📅 Recent Data")
@@ -116,34 +116,30 @@ ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
 
-# === FINAL BULLETPROOF QUICK INSIGHTS (USING .item() TO AVOID PANDAS TRUTH AMBIGUITY) ===
+# === FINAL, BULLETPROOF QUICK INSIGHTS ===
 st.subheader("💡 Quick Insights")
 latest = hist_plot.iloc[-1]
 insights = []
 
-# Extract scalar values safely
-close = latest['Close'].item() if pd.notna(latest['Close']) else None
-sma_50 = latest['SMA_50'].item() if pd.notna(latest['SMA_50']) else None
-sma_200 = latest['SMA_200'].item() if pd.notna(latest['SMA_200']) else None
-rsi = latest['RSI_14'].item() if pd.notna(latest['RSI_14']) else None
-macd = latest['MACD'].item() if pd.notna(latest['MACD']) else None
-signal = latest['MACD_Signal'].item() if pd.notna(latest['MACD_Signal']) else None
-
-# Strong Bullish Trend
-if close is not None and sma_50 is not None and sma_200 is not None:
-    if close > sma_50 > sma_200:
+# Extract values as Python scalars using .item() after notna check
+if pd.notna(latest['Close']) and pd.notna(latest['SMA_50']) and pd.notna(latest['SMA_200']):
+    close_val = latest['Close'].item()
+    sma50_val = latest['SMA_50'].item()
+    sma200_val = latest['SMA_200'].item()
+    if close_val > sma50_val > sma200_val:
         insights.append("🟢 Strong Bullish Trend")
 
-# RSI
-if rsi is not None:
-    if rsi > 70:
+if pd.notna(latest['RSI_14']):
+    rsi_val = latest['RSI_14'].item()
+    if rsi_val > 70:
         insights.append("🔴 Overbought – possible pullback")
-    elif rsi < 30:
+    elif rsi_val < 30:
         insights.append("🟢 Oversold – possible rebound")
 
-# MACD
-if macd is not None and signal is not None:
-    if macd > signal:
+if pd.notna(latest['MACD']) and pd.notna(latest['MACD_Signal']):
+    macd_val = latest['MACD'].item()
+    signal_val = latest['MACD_Signal'].item()
+    if macd_val > signal_val:
         insights.append("🟢 Bullish Momentum")
     else:
         insights.append("🔴 Bearish Momentum")
