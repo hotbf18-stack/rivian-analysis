@@ -116,30 +116,34 @@ ax_macd.legend()
 ax_macd.grid(alpha=0.3)
 st.pyplot(fig_macd)
 
-# === FINAL, BULLETPROOF QUICK INSIGHTS ===
+# === FINAL, NO-ERROR QUICK INSIGHTS ===
 st.subheader("💡 Quick Insights")
 latest = hist_plot.iloc[-1]
 insights = []
 
-# Extract values as Python scalars using .item() after notna check
-if pd.notna(latest['Close']) and pd.notna(latest['SMA_50']) and pd.notna(latest['SMA_200']):
-    close_val = latest['Close'].item()
-    sma50_val = latest['SMA_50'].item()
-    sma200_val = latest['SMA_200'].item()
-    if close_val > sma50_val > sma200_val:
+# Extract as plain Python numbers using .item()
+close = latest['Close'].item()
+sma_50 = latest['SMA_50'].item() if pd.notna(latest['SMA_50']) else None
+sma_200 = latest['SMA_200'].item() if pd.notna(latest['SMA_200']) else None
+rsi = latest['RSI_14'].item() if pd.notna(latest['RSI_14']) else None
+macd = latest['MACD'].item() if pd.notna(latest['MACD']) else None
+signal = latest['MACD_Signal'].item() if pd.notna(latest['MACD_Signal']) else None
+
+# Strong Bullish Trend
+if sma_50 is not None and sma_200 is not None:
+    if close > sma_50 > sma_200:
         insights.append("🟢 Strong Bullish Trend")
 
-if pd.notna(latest['RSI_14']):
-    rsi_val = latest['RSI_14'].item()
-    if rsi_val > 70:
+# RSI
+if rsi is not None:
+    if rsi > 70:
         insights.append("🔴 Overbought – possible pullback")
-    elif rsi_val < 30:
+    elif rsi < 30:
         insights.append("🟢 Oversold – possible rebound")
 
-if pd.notna(latest['MACD']) and pd.notna(latest['MACD_Signal']):
-    macd_val = latest['MACD'].item()
-    signal_val = latest['MACD_Signal'].item()
-    if macd_val > signal_val:
+# MACD
+if macd is not None and signal is not None:
+    if macd > signal:
         insights.append("🟢 Bullish Momentum")
     else:
         insights.append("🔴 Bearish Momentum")
